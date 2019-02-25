@@ -4,19 +4,17 @@ import android.app.Activity;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
+import android.support.v7.app.AppCompatActivity;
+import android.support.v7.widget.LinearLayoutManager;
+import android.support.v7.widget.RecyclerView;
 import android.view.View;
 import android.widget.Toast;
 
 import com.fxn.adapters.MyAdapter;
-import com.fxn.pix.Options;
 import com.fxn.pix.Pix;
 import com.fxn.utility.PermUtil;
 
 import java.util.ArrayList;
-
-import androidx.appcompat.app.AppCompatActivity;
-import androidx.recyclerview.widget.LinearLayoutManager;
-import androidx.recyclerview.widget.RecyclerView;
 
 public class MainActivity extends AppCompatActivity {
     RecyclerView recyclerView;
@@ -30,8 +28,9 @@ public class MainActivity extends AppCompatActivity {
         recyclerView.setLayoutManager(new LinearLayoutManager(this));
         myAdapter = new MyAdapter(this);
         recyclerView.setAdapter(myAdapter);
-        findViewById(R.id.fab).setOnClickListener((View view) ->
-                Pix.start(MainActivity.this, Options.init().setRequestCode(100).setCount(2).setFrontfacing(true)));
+        findViewById(R.id.fab).setOnClickListener((View view) -> {
+            Pix.start(MainActivity.this, 100, 5);
+        });
 
     }
 
@@ -59,12 +58,15 @@ public class MainActivity extends AppCompatActivity {
             case PermUtil.REQUEST_CODE_ASK_MULTIPLE_PERMISSIONS: {
                 // If request is cancelled, the result arrays are empty.
                 if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                    Pix.start(MainActivity.this, Options.init().setRequestCode(100).setCount(1));
+                    Pix.start(MainActivity.this, 100, 5);
                 } else {
                     Toast.makeText(MainActivity.this, "Approve permissions to open Pix ImagePicker", Toast.LENGTH_LONG).show();
                 }
                 return;
             }
+
+            // other 'case' lines to check for other
+            // permissions this app might request.
         }
     }
 }

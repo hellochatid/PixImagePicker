@@ -9,9 +9,21 @@ import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.provider.MediaStore;
+import android.support.annotation.NonNull;
+import android.support.design.widget.BottomSheetBehavior;
+import android.support.v4.app.Fragment;
+import android.support.v4.app.FragmentActivity;
+import android.support.v4.content.res.ResourcesCompat;
+import android.support.v4.graphics.drawable.DrawableCompat;
+import android.support.v4.view.ViewCompat;
+import android.support.v7.app.AppCompatActivity;
+import android.support.v7.widget.GridLayoutManager;
+import android.support.v7.widget.LinearLayoutManager;
+import android.support.v7.widget.RecyclerView;
 import android.util.Log;
 import android.view.MotionEvent;
 import android.view.View;
@@ -34,7 +46,10 @@ import com.fxn.utility.ImageFetcher;
 import com.fxn.utility.PermUtil;
 import com.fxn.utility.Utility;
 import com.fxn.utility.ui.FastScrollStateChangeListener;
-import com.google.android.material.bottomsheet.BottomSheetBehavior;
+import com.wonderkiln.camerakit.CameraKit;
+import com.wonderkiln.camerakit.CameraKitEventCallback;
+import com.wonderkiln.camerakit.CameraKitImage;
+import com.wonderkiln.camerakit.CameraView;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -42,41 +57,19 @@ import java.util.Calendar;
 import java.util.HashSet;
 import java.util.Set;
 
-import androidx.annotation.NonNull;
-import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.content.res.ResourcesCompat;
-import androidx.core.graphics.drawable.DrawableCompat;
-import androidx.core.view.ViewCompat;
-import androidx.fragment.app.Fragment;
-import androidx.fragment.app.FragmentActivity;
-import androidx.recyclerview.widget.GridLayoutManager;
-import androidx.recyclerview.widget.LinearLayoutManager;
-import androidx.recyclerview.widget.RecyclerView;
-import io.fotoapparat.Fotoapparat;
-import io.fotoapparat.configuration.CameraConfiguration;
-import io.fotoapparat.parameter.ScaleType;
-import io.fotoapparat.result.BitmapPhoto;
-import io.fotoapparat.selector.FlashSelectorsKt;
-import io.fotoapparat.selector.FocusModeSelectorsKt;
-import io.fotoapparat.selector.LensPositionSelectorsKt;
-import io.fotoapparat.selector.SelectorsKt;
-import io.fotoapparat.view.CameraView;
-import kotlin.Unit;
-import kotlin.jvm.functions.Function1;
-
 public class Pix extends AppCompatActivity implements View.OnTouchListener {
 
     private static final int sBubbleAnimDuration = 1000;
     private static final int sScrollbarHideDelay = 1000;
-    private static final String OPTIONS = "options";
+    private static final String SELECTION = "selection";
     private static final int sTrackSnapRange = 5;
     public static String IMAGE_RESULTS = "image_results";
     public static float TOPBAR_HEIGHT;
     private int BottomBarHeight = 0;
     private int colorPrimaryDark;
-    private Fotoapparat fotoapparat;
     private float zoom = 0.0f;
     private float dist = 0.0f;
+    CameraView mCamera;
     private Handler handler = new Handler();
     private FastScrollStateChangeListener mFastScrollStateChangeListener;
     private RecyclerView recyclerView, instantRecyclerView;
@@ -98,7 +91,7 @@ public class Pix extends AppCompatActivity implements View.OnTouchListener {
     private float mViewHeight;
     private boolean mHideScrollbar = true;
     private boolean LongSelection = false;
-    private Options options = null;
+    private int SelectionCount = 1;
     private RecyclerView.OnScrollListener mScrollListener = new RecyclerView.OnScrollListener() {
 
         @Override
@@ -143,7 +136,7 @@ public class Pix extends AppCompatActivity implements View.OnTouchListener {
                     initaliseadapter.select(false, position);
                     mainImageAdapter.select(false, position);
                 } else {
-                    if (options.getCount() <= selectionList.size()) {
+                    if (SelectionCount <= selectionList.size()) {
                         Toast.makeText(Pix.this, String.format(getResources().getString(R.string.selection_limiter_pix), selectionList.size()), Toast.LENGTH_SHORT).show();
                         return;
                     }
@@ -166,6 +159,11 @@ public class Pix extends AppCompatActivity implements View.OnTouchListener {
                     anim.setDuration(300);
                     anim.setAnimationListener(new Animation.AnimationListener() {
 
+                        /**
+                         * <p>Notifies the start of the animation.</p>
+                         *
+                         * @param animation The started animation.
+                         */
                         @Override
                         public void onAnimationStart(Animation animation) {
 
@@ -177,6 +175,11 @@ public class Pix extends AppCompatActivity implements View.OnTouchListener {
                             sendButton.clearAnimation();
                         }
 
+                        /**
+                         * <p>Notifies the repetition of the animation.</p>
+                         *
+                         * @param animation The animation which was repeated.
+                         */
                         @Override
                         public void onAnimationRepeat(Animation animation) {
 
@@ -198,7 +201,7 @@ public class Pix extends AppCompatActivity implements View.OnTouchListener {
 
         @Override
         public void onLongClick(Img img, View view, int position) {
-            if (options.getCount() > 1) {
+            if (SelectionCount > 1) {
                 Utility.vibe(Pix.this, 50);
                 //Log.e("onLongClick", "onLongClick");
                 LongSelection = true;
@@ -234,68 +237,50 @@ public class Pix extends AppCompatActivity implements View.OnTouchListener {
     };
     private FrameLayout flash;
     private ImageView front;
+    private boolean isback = true;
     private int flashDrawable;
-    private View.OnTouchListener onCameraTouchListner = new View.OnTouchListener() {
-        @Override
-        public boolean onTouch(View v, MotionEvent event) {
-            if (event.getPointerCount() > 1) {
 
-                switch (event.getAction() & MotionEvent.ACTION_MASK) {
-                    case MotionEvent.ACTION_POINTER_DOWN:
-                        dist = Utility.getFingerSpacing(event);
-                        break;
-                    case MotionEvent.ACTION_MOVE:
-                        float maxZoom = 1f;
-
-                        float newDist = Utility.getFingerSpacing(event);
-                        if (newDist > dist) {
-                            //zoom in
-                            if (zoom < maxZoom)
-                                zoom = zoom + 0.01f;
-                        } else if ((newDist < dist) && (zoom > 0)) {
-                            //zoom out
-                            zoom = zoom - 0.01f;
-                        }
-                        dist = newDist;
-                        fotoapparat.setZoom(zoom);
-                        break;
-                    default:
-                        break;
+    public static void start(final Fragment context, final int requestCode, final int selectionCount) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            PermUtil.checkForCamaraWritePermissions(context, new WorkFinish() {
+                @Override
+                public void onWorkFinish(Boolean check) {
+                    Intent i = new Intent(context.getActivity(), Pix.class);
+                    i.putExtra(SELECTION, selectionCount);
+                    context.startActivityForResult(i, requestCode);
                 }
-            }
-            return true;
+            });
+        } else {
+            Intent i = new Intent(context.getActivity(), Pix.class);
+            i.putExtra(SELECTION, selectionCount);
+            context.startActivityForResult(i, requestCode);
         }
-    };
 
-
-    public static void start(final Fragment context, final Options options) {
-        PermUtil.checkForCamaraWritePermissions(context, new WorkFinish() {
-            @Override
-            public void onWorkFinish(Boolean check) {
-                Intent i = new Intent(context.getActivity(), Pix.class);
-                i.putExtra(OPTIONS, options);
-                context.startActivityForResult(i, options.getRequestCode());
-            }
-        });
     }
 
     public static void start(Fragment context, int requestCode) {
-        start(context, Options.init().setRequestCode(requestCode).setCount(1));
+        start(context, requestCode, 1);
     }
 
-    public static void start(final FragmentActivity context, final Options options) {
-        PermUtil.checkForCamaraWritePermissions(context, new WorkFinish() {
-            @Override
-            public void onWorkFinish(Boolean check) {
-                Intent i = new Intent(context, Pix.class);
-                i.putExtra(OPTIONS, options);
-                context.startActivityForResult(i, options.getRequestCode());
-            }
-        });
+    public static void start(final FragmentActivity context, final int requestCode, final int selectionCount) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            PermUtil.checkForCamaraWritePermissions(context, new WorkFinish() {
+                @Override
+                public void onWorkFinish(Boolean check) {
+                    Intent i = new Intent(context, Pix.class);
+                    i.putExtra(SELECTION, selectionCount);
+                    context.startActivityForResult(i, requestCode);
+                }
+            });
+        } else {
+            Intent i = new Intent(context, Pix.class);
+            i.putExtra(SELECTION, selectionCount);
+            context.startActivityForResult(i, requestCode);
+        }
     }
 
     public static void start(final FragmentActivity context, int requestCode) {
-        start(context, Options.init().setRequestCode(requestCode).setCount(1));
+        start(context, requestCode, 1);
     }
 
     private void hideScrollbar() {
@@ -340,22 +325,16 @@ public class Pix extends AppCompatActivity implements View.OnTouchListener {
         initialize();
     }
 
-    @Override
-    protected void onRestart() {
-        super.onRestart();
-        initialize();
-        fotoapparat.start();
-    }
 
     @Override
     protected void onResume() {
         super.onResume();
-        fotoapparat.start();
+        mCamera.start();
     }
 
     @Override
     protected void onPause() {
-        fotoapparat.stop();
+        mCamera.stop();
         super.onPause();
     }
 
@@ -365,32 +344,14 @@ public class Pix extends AppCompatActivity implements View.OnTouchListener {
             getSupportActionBar().hide();
         }
         try {
-            options = (Options) getIntent().getSerializableExtra(OPTIONS);
+            SelectionCount = getIntent().getIntExtra(SELECTION, 1);
         } catch (Exception e) {
             e.printStackTrace();
         }
         colorPrimaryDark = ResourcesCompat.getColor(getResources(), R.color.colorPrimaryPix, getTheme());
-        CameraView mCamera = findViewById(R.id.camera_view);
-        fotoapparat = Fotoapparat.with(this).into(mCamera)
-                .previewScaleType(ScaleType.CenterCrop)  // we want the preview to fill the view
-                // .photoResolution(ResolutionSelectorsKt.lowestResolution())   // we want to have the biggest photo possible
-                .lensPosition(LensPositionSelectorsKt.back())      // we want back camera
-                .focusMode(SelectorsKt.firstAvailable(  // (optional) use the first focus mode which is supported by device
-                        FocusModeSelectorsKt.continuousFocusPicture(),
-                        FocusModeSelectorsKt.autoFocus(),    // in case if continuous focus is not available on device, auto focus will be used
-                        FocusModeSelectorsKt.fixed()             // if even auto focus is not available - fixed focus mode will be used
-                ))
-                //.flash(FlashSelectorsKt.autoRedEye())
-                /*.logger(LoggersKt.loggers(            // (optional) we want to log camera events in 2 places at once
-                        LoggersKt.logcat(),           // ... in logcat
-                        LoggersKt.fileLogger(this)    // ... and to file
-                ))*/
-                .build();
+        mCamera = findViewById(R.id.camera_view);
 
         zoom = 0.0f;
-        mCamera.setOnTouchListener(onCameraTouchListner);
-        fotoapparat.start();
-        fotoapparat.updateConfiguration(CameraConfiguration.builder().flash(FlashSelectorsKt.autoRedEye()).build());
 
         flash = findViewById(R.id.flash);
         front = findViewById(R.id.front);
@@ -398,7 +359,7 @@ public class Pix extends AppCompatActivity implements View.OnTouchListener {
         selection_count = findViewById(R.id.selection_count);
         selection_back = findViewById(R.id.selection_back);
         selection_check = findViewById(R.id.selection_check);
-        selection_check.setVisibility((options.getCount() > 1) ? View.VISIBLE : View.GONE);
+        selection_check.setVisibility((SelectionCount > 1) ? View.VISIBLE : View.GONE);
         sendButton = findViewById(R.id.sendButton);
         img_count = findViewById(R.id.img_count);
         mBubbleView = findViewById(R.id.fastscroll_bubble);
@@ -444,12 +405,6 @@ public class Pix extends AppCompatActivity implements View.OnTouchListener {
         recyclerView.setAdapter(mainImageAdapter);
         recyclerView.addItemDecoration(new HeaderItemDecoration(this, mainImageAdapter));
         mHandleView.setOnTouchListener(this);
-        final CameraConfiguration cameraConfiguration = new CameraConfiguration();
-        if (options.isFrontfacing()) {
-            fotoapparat.switchTo(LensPositionSelectorsKt.front(), cameraConfiguration);
-        } else {
-            fotoapparat.switchTo(LensPositionSelectorsKt.back(), cameraConfiguration);
-        }
         onClickMethods();
 
 
@@ -464,21 +419,13 @@ public class Pix extends AppCompatActivity implements View.OnTouchListener {
         findViewById(R.id.clickme).setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-
-                fotoapparat.takePicture().toBitmap().transform(new Function1<BitmapPhoto, Bitmap>() {
+                mCamera.captureImage(new CameraKitEventCallback<CameraKitImage>() {
                     @Override
-                    public Bitmap invoke(BitmapPhoto bitmapPhoto) {
-                        Log.e("my pick transform", bitmapPhoto.toString());
-                        fotoapparat.stop();
-                        return Utility.rotate(bitmapPhoto.bitmap, -bitmapPhoto.rotationDegrees);
-                    }
-                }).whenAvailable(new Function1<Bitmap, Unit>() {
-                    @Override
-                    public Unit invoke(Bitmap bitmap) {
-                        if (bitmap != null) {
-                            Log.e("my pick", bitmap.toString());
+                    public void callback(CameraKitImage image) {
+                        if (image != null) {
+                            Bitmap bitmap = image.getBitmap();
                             synchronized (bitmap) {
-                                File photo = Utility.writeImage(bitmap, options.getPath(), options.getImageQuality(), options.getWidth(), options.getHeight());
+                                File photo = Utility.writeImage(bitmap);
                                 Log.e("my pick saved", bitmap.toString() + "    ->  " + photo.length() / 1024);
                                 selectionList.clear();
                                 selectionList.add(new Img("", "", photo.getAbsolutePath(), ""));
@@ -486,7 +433,6 @@ public class Pix extends AppCompatActivity implements View.OnTouchListener {
 
                             }
                         }
-                        return null;
                     }
                 });
             }
@@ -494,16 +440,12 @@ public class Pix extends AppCompatActivity implements View.OnTouchListener {
         findViewById(R.id.selection_ok).setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                // Toast.makeText(Pix.this, "fin", Toast.LENGTH_SHORT).show();
-                //Log.e("Hello", "onclick");
                 returnObjects();
             }
         });
         sendButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                //Toast.makeText(Pix.this, "fin", Toast.LENGTH_SHORT).show();
-                //Log.e("Hello", "onclick");
                 returnObjects();
             }
         });
@@ -537,17 +479,16 @@ public class Pix extends AppCompatActivity implements View.OnTouchListener {
                         if (flashDrawable == R.drawable.ic_flash_auto_black_24dp) {
                             flashDrawable = R.drawable.ic_flash_off_black_24dp;
                             iv.setImageResource(flashDrawable);
-                            fotoapparat.updateConfiguration(CameraConfiguration.builder().flash(FlashSelectorsKt.off()).build());
+                            mCamera.setFlash(CameraKit.Constants.FLASH_OFF);
                         } else if (flashDrawable == R.drawable.ic_flash_off_black_24dp) {
                             flashDrawable = R.drawable.ic_flash_on_black_24dp;
                             iv.setImageResource(flashDrawable);
-                            fotoapparat.updateConfiguration(CameraConfiguration.builder().flash(FlashSelectorsKt.on()).build());
+                            mCamera.setFlash(CameraKit.Constants.FLASH_ON);
                         } else {
                             flashDrawable = R.drawable.ic_flash_auto_black_24dp;
                             iv.setImageResource(flashDrawable);
-                            fotoapparat.updateConfiguration(CameraConfiguration.builder().flash(FlashSelectorsKt.autoRedEye()).build());
+                            mCamera.setFlash(CameraKit.Constants.FLASH_AUTO);
                         }
-                        // fotoapparat.focus();
                         iv.animate().translationY(0).setDuration(50).setListener(null).start();
                     }
                 }).start();
@@ -568,16 +509,10 @@ public class Pix extends AppCompatActivity implements View.OnTouchListener {
                     }
                 });
                 oa1.start();
-                Log.e("isFrontfacing", "-> " + options.isFrontfacing());
-                if (options.isFrontfacing()) {
-                    options.setFrontfacing(false);
-                    final CameraConfiguration cameraConfiguration = new CameraConfiguration();
-                    fotoapparat.switchTo(LensPositionSelectorsKt.back(), cameraConfiguration);
+                if (mCamera.isFacingBack()) {
+                    mCamera.setFacing(CameraKit.Constants.FACING_FRONT);
                 } else {
-                    final CameraConfiguration cameraConfiguration = new CameraConfiguration();
-                    options.setFrontfacing(true);
-                    fotoapparat.switchTo(LensPositionSelectorsKt.front(), cameraConfiguration);
-
+                    mCamera.setFacing(CameraKit.Constants.FACING_BACK);
                 }
             }
         });
@@ -586,9 +521,6 @@ public class Pix extends AppCompatActivity implements View.OnTouchListener {
     private void updateImages() {
         mainImageAdapter.clearList();
         Cursor cursor = Utility.getCursor(Pix.this);
-        if (cursor == null) {
-            return;
-        }
         ArrayList<Img> INSTANTLIST = new ArrayList<>();
         String header = "";
         int limit = 100;
@@ -629,7 +561,14 @@ public class Pix extends AppCompatActivity implements View.OnTouchListener {
         mBottomSheetBehavior = BottomSheetBehavior.from(bottomSheet);
         mBottomSheetBehavior.setPeekHeight((int) (Utility.convertDpToPixel(194, this)));
         mBottomSheetBehavior.setBottomSheetCallback(new BottomSheetBehavior.BottomSheetCallback() {
-
+            /**
+             * Called when the bottom sheet changes its state.
+             *
+             * @param bottomSheet The bottom sheet view.
+             * @param newState    The new state. This will be one of {@link #STATE_DRAGGING},
+             *                    {@link #STATE_SETTLING}, {@link #STATE_EXPANDED},
+             *                    {@link #STATE_COLLAPSED}, or {@link #STATE_HIDDEN}.
+             */
             @Override
             public void onStateChanged(@NonNull View bottomSheet, int newState) {
 
@@ -657,7 +596,7 @@ public class Pix extends AppCompatActivity implements View.OnTouchListener {
                     initaliseadapter.notifyDataSetChanged();
                     hideScrollbar();
                     img_count.setText(String.valueOf(selectionList.size()));
-                    fotoapparat.start();
+                    mCamera.start();
                 }
             }
         });
@@ -800,7 +739,7 @@ public class Pix extends AppCompatActivity implements View.OnTouchListener {
                 initaliseadapter.notifyItemChanged(img.getPosition());
             }
             LongSelection = false;
-            if (options.getCount() > 1) {
+            if (SelectionCount > 1) {
                 selection_check.setVisibility(View.VISIBLE);
             }
             DrawableCompat.setTint(selection_back.getDrawable(), colorPrimaryDark);

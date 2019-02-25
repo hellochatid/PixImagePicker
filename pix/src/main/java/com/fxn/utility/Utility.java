@@ -10,6 +10,8 @@ import android.graphics.Matrix;
 import android.os.Build;
 import android.os.Environment;
 import android.os.Vibrator;
+import android.support.v7.app.AppCompatActivity;
+import android.support.v7.widget.RecyclerView;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.MotionEvent;
@@ -27,9 +29,6 @@ import java.util.Calendar;
 import java.util.Date;
 import java.util.Locale;
 
-import androidx.appcompat.app.AppCompatActivity;
-import androidx.recyclerview.widget.RecyclerView;
-
 /**
  * Created by akshay on 21/01/18.
  */
@@ -37,7 +36,6 @@ import androidx.recyclerview.widget.RecyclerView;
 public class Utility {
 
     public static int HEIGHT, WIDTH;
-
     private String pathDir;
 
     public static void setupStatusBarHidden(AppCompatActivity appCompatActivity) {
@@ -197,42 +195,25 @@ public class Utility {
         ((Vibrator) c.getSystemService(Context.VIBRATOR_SERVICE)).vibrate(l);
     }
 
-    public static File writeImage(Bitmap bitmap, String path, int quality, int newWidth, int newHeight) {
-        File dir = new File(Environment.getExternalStorageDirectory(), path);
+    public static File writeImage(Bitmap bitmap) {
+        File dir = new File(Environment.getExternalStorageDirectory(), "/DCIM/Camera");
         if (!dir.exists())
             dir.mkdir();
         File photo = new File(dir, "IMG_" + new SimpleDateFormat("yyyyMMdd_HHmmSS", Locale.ENGLISH).format(new Date()) + ".jpg");
         if (photo.exists()) {
             photo.delete();
         }
-        if (newWidth != 0 && newHeight != 0) {
-            bitmap = getResizedBitmap(bitmap, newWidth, newHeight);
-        }
+
         try {
             FileOutputStream fos = new FileOutputStream(photo.getPath());
-            bitmap.compress(Bitmap.CompressFormat.JPEG, quality, fos);
+
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 40, fos);
             // fos.write(jpeg);
             fos.close();
         } catch (Exception e) {
             Log.e("PictureDemo", "Exception in photoCallback", e);
         }
         return photo;
-    }
-
-    public static Bitmap getResizedBitmap(Bitmap bm, int newWidth, int newHeight) {
-        int width = bm.getWidth();
-        int height = bm.getHeight();
-        float scaleWidth = ((float) newWidth) / width;
-        float scaleHeight = ((float) newHeight) / height;
-        // CREATE A MATRIX FOR THE MANIPULATION
-        Matrix matrix = new Matrix();
-        // RESIZE THE BIT MAP
-        matrix.postScale(scaleWidth, scaleHeight);
-
-        // "RECREATE" THE NEW BITMAP
-        Bitmap resizedBitmap = Bitmap.createBitmap(
-                bm, 0, 0, width, height, matrix, false);
-        return resizedBitmap;
     }
 
     public static Bitmap getScaledBitmap(int maxWidth, Bitmap rotatedBitmap) {
