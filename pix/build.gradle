@@ -2,7 +2,7 @@ apply plugin: 'com.android.library'
 ext {
     PUBLISH_GROUP_ID = 'com.fxn769'
     PUBLISH_ARTIFACT_ID = 'pix'
-    PUBLISH_VERSION = '1.2.5'
+    PUBLISH_VERSION = '1.2.6'
 }
 android {
     compileSdkVersion 27
